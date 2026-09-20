@@ -50,9 +50,12 @@ async def handle_browser_call(websocket: WebSocket) -> None:
         await websocket.close(code=1011, reason="Sarvam is not configured")
         return
 
+    caller_phone = websocket.query_params.get("phone")
+    caller_name = websocket.query_params.get("name")
+
     session = CallSession()
     session.call_sid = f"browser_{uuid4().hex}"
-    session.caller_number = "browser-simulator"
+    session.caller_number = caller_phone.strip() if caller_phone and caller_phone.strip() else "browser-simulator"
     session.start_time = datetime.now()
 
     stt_ws = None
@@ -90,6 +93,17 @@ async def handle_browser_call(websocket: WebSocket) -> None:
         # Send greeting
         logger.info("BROWSER PIPELINE  Sending greeting...")
         session.conversation_history.append({"role": "system", "content": SALES_AGENT_PROMPT})
+        
+        if caller_name and caller_name.strip():
+            system_note = f"The caller's name is {caller_name.strip()}."
+            session.conversation_history.append({"role": "system", "content": system_note})
+            session.transcript.append(TranscriptEntry(role="caller", text=f"My name is {caller_name.strip()}."))
+            if db_call_id:
+                try:
+                    await save_transcript_entry(db_call_id, "caller", f"My name is {caller_name.strip()}.")
+                except Exception:
+                    pass
+
         session.conversation_history.append({"role": "assistant", "content": GREETING})
         session.transcript.append(TranscriptEntry(role="agent", text=GREETING))
         
@@ -201,7 +215,8 @@ async def handle_browser_call(websocket: WebSocket) -> None:
                     session.transcript,
                     session.caller_number,
                     db_call_id,
-                    sync_to_frappe=False,
+                    sync_to_frappe=True,
+                    is_dummy=True,
                 )
             except Exception:
                 logger.exception("BROWSER PIPELINE  Lead extraction failed")

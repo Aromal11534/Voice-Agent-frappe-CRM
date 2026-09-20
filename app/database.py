@@ -343,3 +343,20 @@ async def get_call_stats() -> dict[str, Any]:
             "frappe_pending": frappe_total - frappe_synced,
             "avg_duration_sec": avg_duration,
         }
+
+async def delete_all_history() -> None:
+    """Delete all calls, transcripts, and extractions from the database."""
+    global _pool
+    async with _require_pool().acquire() as conn:
+        async with conn.transaction():
+            await conn.execute("DELETE FROM extractions")
+            await conn.execute("DELETE FROM transcripts")
+            await conn.execute("DELETE FROM calls")
+        logger.info("DATABASE  All history deleted")
+
+async def get_all_frappe_lead_names() -> list[str]:
+    """Get all synced frappe lead names to delete them from CRM."""
+    global _pool
+    async with _require_pool().acquire() as conn:
+        rows = await conn.fetch("SELECT frappe_lead_name FROM extractions WHERE frappe_synced = 1 AND frappe_lead_name IS NOT NULL")
+        return [row["frappe_lead_name"] for row in rows]

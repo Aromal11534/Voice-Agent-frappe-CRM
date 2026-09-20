@@ -114,6 +114,20 @@ function App() {
     setAuthView(null);
   };
 
+  const clearHistory = async () => {
+    if (!window.confirm("Are you sure you want to delete ALL call and lead history? This cannot be undone.")) return;
+    try {
+      const response = await fetch(`${API_BASE}/api/calls`, {
+        method: 'DELETE',
+        headers: token ? { Authorization: `Bearer ${token}` } : {},
+      });
+      if (!response.ok) throw new Error('Failed to delete history');
+      loadDashboard();
+    } catch (err) {
+      setError(err.message || "Failed to clear history");
+    }
+  };
+
   const handleLogout = () => {
     sessionStorage.removeItem('voiceAgentToken');
     setToken('');
@@ -183,22 +197,12 @@ function App() {
           </div>
           
           <div className="flex items-center gap-6">
-            <button className="hidden sm:flex items-center gap-2 text-sm text-gray-500 hover:text-gray-900 transition-colors">
-              <HelpCircle className="h-4 w-4" />
-              Help Center
+            <button 
+              onClick={handleLogout} 
+              className="text-sm font-medium text-gray-600 hover:text-gray-900 transition-colors"
+            >
+              Logout
             </button>
-            
-            <div className="relative group">
-              <div className="flex items-center gap-2 cursor-pointer">
-                <span className="text-sm font-medium text-gray-900">John d.</span>
-                <ChevronDown className="h-4 w-4 text-gray-500" />
-              </div>
-              <div className="absolute right-0 mt-2 w-48 rounded-md shadow-lg bg-white ring-1 ring-black ring-opacity-5 hidden group-hover:block z-50">
-                <div className="py-1">
-                  <button onClick={handleLogout} className="block w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-100">Sign out</button>
-                </div>
-              </div>
-            </div>
           </div>
         </header>
 
@@ -208,7 +212,10 @@ function App() {
             {activePage === 'overview' ? 'Dashboard' : activePage === 'calls' ? 'Call Logs' : activePage === 'leads' ? 'Leads' : 'Simulate Call'}
           </h1>
           <div className="flex items-center gap-3">
-             <div className={`hidden sm:flex items-center gap-2 rounded px-2.5 py-1 text-xs font-medium border ${isHealthy ? 'bg-green-50 text-green-700 border-green-200' : 'bg-red-50 text-red-700 border-red-200'}`}>
+              <button onClick={clearHistory} className="text-xs text-red-600 hover:text-red-800 font-medium px-3 py-1.5 border border-red-200 rounded bg-red-50 hover:bg-red-100 transition-colors">
+                Clear History
+              </button>
+              <div className={`hidden sm:flex items-center gap-2 rounded px-2.5 py-1 text-xs font-medium border ${isHealthy ? 'bg-green-50 text-green-700 border-green-200' : 'bg-red-50 text-red-700 border-red-200'}`}>
                 <span className={`h-1.5 w-1.5 rounded-full ${isHealthy ? 'bg-green-500' : 'bg-red-500'}`} />
                 {isHealthy ? 'API Ready' : 'Setup required'}
               </div>
@@ -220,7 +227,7 @@ function App() {
 
         {/* Main Canvas */}
         <main className="flex-1 overflow-y-auto p-4 sm:p-6 lg:p-8 bg-[#fafafa]">
-          <div key={activePage} className="mx-auto max-w-7xl space-y-6 page-transition">
+          <div key={activePage} className="w-full space-y-6 page-transition">
             
             {error && (
               <div className="rounded border border-red-200 bg-red-50 p-4">

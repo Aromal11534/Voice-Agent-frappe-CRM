@@ -57,9 +57,8 @@ class FrappeClient:
         ]
 
         params = {
-            "doctype": "CRM Lead",
             "filters": json.dumps(filters),
-            "fields": '["name","first_name","last_name","mobile_no","email","status"]',
+            "fields": '["name"]',
             "limit_page_length": 1,
         }
 
@@ -110,6 +109,79 @@ class FrappeClient:
         except Exception:
             logger.exception("FRAPPE  Error creating lead")
             return None
+
+    async def create_call_log(self, log_data: dict[str, Any]) -> dict[str, Any] | None:
+        """
+        Create a CRM Call Log record in Frappe.
+        """
+        try:
+            async with httpx.AsyncClient(timeout=15) as client:
+                resp = await client.post(
+                    self._url("CRM Call Log"),
+                    headers=self.headers,
+                    json=log_data,
+                )
+                resp.raise_for_status()
+                result = resp.json().get("data", {})
+                log_name = result.get("name", "unknown")
+                logger.info(f"FRAPPE  Call Log created: {log_name}")
+                return result
+        except Exception:
+            logger.exception("FRAPPE  Error creating Call Log")
+            return None
+
+    async def create_deal(self, deal_data: dict[str, Any]) -> dict[str, Any] | None:
+        """Create a CRM Deal record in Frappe."""
+        try:
+            async with httpx.AsyncClient(timeout=15) as client:
+                resp = await client.post(
+                    self._url("CRM Deal"),
+                    headers=self.headers,
+                    json=deal_data,
+                )
+                resp.raise_for_status()
+                result = resp.json().get("data", {})
+                deal_name = result.get("name", "unknown")
+                logger.info(f"FRAPPE  Deal created: {deal_name}")
+                return result
+        except Exception:
+            logger.exception("FRAPPE  Error creating Deal")
+            return None
+
+    async def get_call_logs_by_lead(self, lead_name: str) -> list[str]:
+        """Get all CRM Call Logs linked to a lead."""
+        try:
+            filters = [["reference_docname", "=", lead_name]]
+            params = {
+                "filters": json.dumps(filters),
+                "fields": '["name"]',
+            }
+            async with httpx.AsyncClient(timeout=15) as client:
+                resp = await client.get(
+                    self._url("CRM Call Log"),
+                    headers=self.headers,
+                    params=params,
+                )
+                resp.raise_for_status()
+                data = resp.json().get("data", [])
+                return [d["name"] for d in data]
+        except Exception:
+            return []
+
+    async def delete_document(self, doctype: str, docname: str) -> bool:
+        """Delete a document in Frappe."""
+        try:
+            async with httpx.AsyncClient(timeout=15) as client:
+                resp = await client.delete(
+                    self._url(f"{doctype}/{docname}"),
+                    headers=self.headers,
+                )
+                resp.raise_for_status()
+                logger.info(f"FRAPPE  Deleted {doctype}: {docname}")
+                return True
+        except Exception:
+            logger.exception(f"FRAPPE  Error deleting {doctype}/{docname}")
+            return False
 
     async def update_lead(
         self, lead_name: str, update_data: dict[str, Any]
@@ -163,6 +235,31 @@ class FrappeClient:
 
         except Exception:
             logger.exception("FRAPPE  Error adding comment")
+            return None
+
+    async def create_note(
+        self, content: str, reference_doctype: str, reference_name: str
+    ) -> dict[str, Any] | None:
+        """Create an FCRM Note and attach it to a document."""
+        note_data = {
+            "doctype": "FCRM Note",
+            "title": "AI Call Summary",
+            "content": content,
+            "reference_doctype": reference_doctype,
+            "reference_docname": reference_name
+        }
+        try:
+            async with httpx.AsyncClient(timeout=15) as client:
+                resp = await client.post(
+                    self._url("FCRM Note"),
+                    headers=self.headers,
+                    json=note_data,
+                )
+                resp.raise_for_status()
+                logger.info(f"FRAPPE  Note added to {reference_doctype}/{reference_name}")
+                return resp.json().get("data")
+        except Exception:
+            logger.exception("FRAPPE  Error creating Note")
             return None
 
     async def create_todo(

@@ -13,7 +13,7 @@ from __future__ import annotations
 
 import logging
 
-from app.database import mark_frappe_synced, save_extraction
+from app.database import get_call_detail, mark_frappe_synced, save_extraction
 from app.integrations.frappe import FrappeClient
 from app.models.schemas import ExtractedLead, TranscriptEntry
 from app.services.extraction import extract_lead_info
@@ -26,6 +26,7 @@ async def process_call_to_crm(
     caller_phone: str,
     db_call_id: int | None = None,
     sync_to_frappe: bool = True,
+    is_dummy: bool = False,
 ) -> ExtractedLead | None:
     """
     Full post-call processing pipeline.
@@ -73,7 +74,7 @@ async def process_call_to_crm(
     # their extraction in PostgreSQL without creating fake CRM contacts.
     if sync_to_frappe:
         try:
-            await _save_to_frappe(extracted, db_call_id)
+            await _save_to_frappe(extracted, db_call_id, is_dummy)
         except Exception:
             logger.exception("CRM  Frappe integration failed -- lead data preserved in logs")
             logger.info("CRM  Extracted data remains available in PostgreSQL for retry")
@@ -87,7 +88,7 @@ async def process_call_to_crm(
     return extracted
 
 
-async def _save_to_frappe(extracted: ExtractedLead, db_call_id: int | None = None) -> None:
+async def _save_to_frappe(extracted: ExtractedLead, db_call_id: int | None = None, is_dummy: bool = False) -> None:
     """
     Save extracted lead data to Frappe CRM.
 
@@ -100,7 +101,7 @@ async def _save_to_frappe(extracted: ExtractedLead, db_call_id: int | None = Non
     existing_lead = await frappe.find_lead_by_phone(extracted.phone)
 
     # Build the lead field data
-    lead_fields = _build_lead_fields(extracted)
+    lead_fields = _build_lead_fields(extracted, is_dummy)
 
     if existing_lead:
         # Update existing lead
@@ -117,10 +118,10 @@ async def _save_to_frappe(extracted: ExtractedLead, db_call_id: int | None = Non
         logger.error("CRM  Failed to create/update lead")
         return
 
-    # Step 3: Add AI summary as a comment
-    logger.info("CRM  Step 3/4 -- Adding call summary...")
+    # Step 3: Add AI summary as a note
+    logger.info("CRM  Step 3/4 -- Adding call summary as note...")
     comment_text = _build_comment(extracted)
-    await frappe.add_comment("CRM Lead", lead_name, comment_text)
+    await frappe.create_note(comment_text, "CRM Lead", lead_name)
 
     # Mark as synced in PostgreSQL
     if db_call_id:
@@ -131,7 +132,7 @@ async def _save_to_frappe(extracted: ExtractedLead, db_call_id: int | None = Non
 
     # Step 4: Create follow-up ToDo if required
     if extracted.follow_up_required:
-        logger.info("CRM  Step 4/4 -- Creating follow-up ToDo...")
+        logger.info("CRM  Step 4/5 -- Creating follow-up ToDo...")
         todo_description = _build_todo_description(extracted, lead_name)
         await frappe.create_todo(
             description=todo_description,
@@ -140,23 +141,81 @@ async def _save_to_frappe(extracted: ExtractedLead, db_call_id: int | None = Non
         )
         logger.info("CRM  Follow-up ToDo created")
     else:
-        logger.info("CRM  Step 4/4 -- No follow-up required, skipping")
+        logger.info("CRM  Step 4/5 -- No follow-up required, skipping")
+
+    # Step 5: Create CRM Call Log
+    if db_call_id:
+        call_detail = await get_call_detail(db_call_id)
+        if call_detail:
+            logger.info("CRM  Step 5/5 -- Creating CRM Call Log...")
+            
+            def fmt_time(t_str: str | None) -> str | None:
+                if not t_str: return None
+                return t_str.replace("T", " ")[:19]
+
+            call_log_data = {
+                "doctype": "CRM Call Log",
+                "id": call_detail.get("call_sid", f"manual-{db_call_id}"),
+                "telephony_medium": "Manual",
+                "type": "Incoming" if call_detail.get("direction") == "inbound" else "Outgoing",
+                "status": "Completed",
+                "from": call_detail.get("caller_number", extracted.phone),
+                "to": "AI Agent",
+                "duration": call_detail.get("duration_sec", 0),
+                "start_time": fmt_time(call_detail.get("start_time")),
+                "end_time": fmt_time(call_detail.get("end_time")),
+                "reference_doctype": "CRM Lead",
+                "reference_docname": lead_name,
+            }
+            if is_dummy:
+                call_log_data["from"] = "[TEST] " + call_log_data["from"]
+            
+            await frappe.create_call_log(call_log_data)
+
+    # Step 6: Create CRM Deal (if Warm/Hot or follow-up required)
+    status_str = extracted.lead_status.value if hasattr(extracted.lead_status, 'value') else str(extracted.lead_status)
+    if status_str in ("Hot", "Warm") or extracted.follow_up_required:
+        logger.info("CRM  Step 6/6 -- Creating CRM Deal...")
+        deal_fields = {
+            "doctype": "CRM Deal",
+            "lead": lead_name,
+            "mobile_no": extracted.phone,
+        }
+        if extracted.budget:
+            deal_fields["expected_deal_value"] = extracted.budget
+        
+        name_parts = (extracted.name or "").strip().split(" ", 1)
+        if name_parts and name_parts[0]:
+            first_name = name_parts[0]
+            if is_dummy:
+                first_name = f"[TEST] {first_name}"
+            deal_fields["first_name"] = first_name
+            if len(name_parts) > 1:
+                deal_fields["last_name"] = name_parts[1]
+        elif is_dummy:
+            deal_fields["first_name"] = "[TEST] Unknown Caller"
+
+        await frappe.create_deal(deal_fields)
 
 
-def _build_lead_fields(extracted: ExtractedLead) -> dict:
+def _build_lead_fields(extracted: ExtractedLead, is_dummy: bool = False) -> dict:
     """Build the Frappe CRM Lead field dict from extracted data."""
     fields: dict = {
         "doctype": "CRM Lead",
         "mobile_no": extracted.phone,
-        "status": "Open",
     }
 
     if extracted.name:
         # Split name into first/last if possible
         name_parts = extracted.name.strip().split(" ", 1)
-        fields["first_name"] = name_parts[0]
+        first_name = name_parts[0]
+        if is_dummy:
+            first_name = f"[TEST] {first_name}"
+        fields["first_name"] = first_name
         if len(name_parts) > 1:
             fields["last_name"] = name_parts[1]
+    elif is_dummy:
+        fields["first_name"] = "[TEST] Unknown Caller"
 
     # Custom fields (created via setup_frappe.py)
     if extracted.language:

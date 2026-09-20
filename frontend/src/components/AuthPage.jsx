@@ -3,8 +3,8 @@ import { User, Mail, Lock, KeyRound } from 'lucide-react';
 import kiduLogo from '../assets/kiducrm.png';
 
 export default function AuthPage({ view, setView, onAuth }) {
-  const [email, setEmail] = useState('demo@kiducode.com');
-  const [password, setPassword] = useState('demo123');
+  const [email, setEmail] = useState('hello@hashadz.com');
+  const [password, setPassword] = useState('HasHadz@435@#*22asd');
   const [token, setToken] = useState('');
   const [name, setName] = useState('');
   
@@ -83,27 +83,6 @@ export default function AuthPage({ view, setView, onAuth }) {
                 />
               </div>
             </div>
-            
-            {isLogin && (
-              <div>
-                <label className="block text-sm font-medium text-gray-700 flex justify-between">
-                  <span>API Access Token (Optional)</span>
-                </label>
-                <div className="mt-1 relative rounded-md shadow-sm">
-                  <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                    <KeyRound className="h-4 w-4 text-gray-400" />
-                  </div>
-                  <input
-                    type="password"
-                    value={token}
-                    onChange={(e) => setToken(e.target.value)}
-                    className="block w-full pl-10 sm:text-sm border border-gray-300 rounded-md py-2 focus:ring-1 focus:ring-black focus:border-black"
-                    placeholder="Paste server token for real API"
-                  />
-                </div>
-                <p className="mt-1 text-xs text-gray-500">Leave blank to use demo mode.</p>
-              </div>
-            )}
 
             {isLogin && (
               <div className="flex items-center justify-between">

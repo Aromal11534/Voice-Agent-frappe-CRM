@@ -14,7 +14,8 @@ import logging
 from fastapi import APIRouter, Depends, Query
 from fastapi.responses import JSONResponse
 
-from app.database import get_call_detail, get_call_stats, get_recent_calls
+from app.database import get_call_detail, get_call_stats, get_recent_calls, delete_all_history, get_all_frappe_lead_names
+from app.integrations.frappe import FrappeClient
 from app.security import require_api_token
 
 logger = logging.getLogger(__name__)
@@ -57,3 +58,23 @@ async def api_stats():
     except Exception:
         logger.exception("DASHBOARD  Error fetching stats")
         return JSONResponse(content={"error": "Failed to fetch stats"}, status_code=500)
+
+
+@router.delete("/api/calls", tags=["dashboard"])
+async def api_delete_calls():
+    """Delete all call history."""
+    try:
+        lead_names = await get_all_frappe_lead_names()
+        if lead_names:
+            frappe = FrappeClient()
+            for lead_name in lead_names:
+                call_logs = await frappe.get_call_logs_by_lead(lead_name)
+                for cl in call_logs:
+                    await frappe.delete_document("CRM Call Log", cl)
+                await frappe.delete_document("CRM Lead", lead_name)
+
+        await delete_all_history()
+        return JSONResponse(content={"success": True})
+    except Exception:
+        logger.exception("DASHBOARD  Error deleting calls")
+        return JSONResponse(content={"error": "Failed to delete history"}, status_code=500)

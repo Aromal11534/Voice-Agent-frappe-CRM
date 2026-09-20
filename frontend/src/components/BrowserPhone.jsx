@@ -6,6 +6,8 @@ const BrowserPhone = () => {
   const [isMuted, setIsMuted] = useState(false);
   const [agentSpeaking, setAgentSpeaking] = useState(false);
   const [errorMessage, setErrorMessage] = useState('');
+  const [callerName, setCallerName] = useState('');
+  const [callerPhone, setCallerPhone] = useState('');
   
   const wsRef = useRef(null);
   const audioContextRef = useRef(null);
@@ -137,7 +139,11 @@ const BrowserPhone = () => {
       // Connect only after the microphone pipeline and message handlers can be
       // installed, otherwise a fast server can send the greeting too early.
       const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-      const ws = new WebSocket(`${wsProtocol}//${window.location.host}/voice/browser`);
+      const params = new URLSearchParams();
+      if (callerName) params.append('name', callerName);
+      if (callerPhone) params.append('phone', callerPhone);
+      const queryString = params.toString() ? `?${params.toString()}` : '';
+      const ws = new WebSocket(`${wsProtocol}//${window.location.host}/voice/browser${queryString}`);
       wsRef.current = ws;
       ws.binaryType = 'arraybuffer';
 
@@ -244,6 +250,25 @@ const BrowserPhone = () => {
       {errorMessage && (
         <div className="mb-5 w-full rounded-md border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700" role="alert">
           {errorMessage}
+        </div>
+      )}
+
+      {status === 'idle' && (
+        <div className="w-full mb-6 space-y-3">
+          <input
+            type="text"
+            placeholder="Your Name (optional)"
+            className="w-full text-sm border border-gray-300 rounded-md px-3 py-2 outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
+            value={callerName}
+            onChange={(e) => setCallerName(e.target.value)}
+          />
+          <input
+            type="tel"
+            placeholder="Phone Number (optional)"
+            className="w-full text-sm border border-gray-300 rounded-md px-3 py-2 outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
+            value={callerPhone}
+            onChange={(e) => setCallerPhone(e.target.value)}
+          />
         </div>
       )}
 

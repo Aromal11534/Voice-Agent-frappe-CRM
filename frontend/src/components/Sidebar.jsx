@@ -61,14 +61,7 @@ export default function Sidebar({ open, onClose, activePage, onNavigate }) {
 
         </nav>
         
-        {/* Profile Footer */}
-        <div className="p-4 border-t border-gray-200 flex items-center justify-between cursor-pointer hover:bg-gray-100/50 transition-colors">
-          <div className="flex items-center gap-2">
-            <div className="h-7 w-7 rounded bg-gray-200 flex items-center justify-center text-[10px] font-bold text-gray-700">M</div>
-            <span className="text-sm font-medium text-gray-900">Marketing Team's</span>
-          </div>
-          <ChevronDown className="h-4 w-4 text-gray-500" />
-        </div>
+
       </div>
     </>
   );
