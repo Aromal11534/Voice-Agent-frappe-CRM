@@ -214,8 +214,8 @@ def _build_lead_fields(extracted: ExtractedLead, is_dummy: bool = False) -> dict
         fields["first_name"] = first_name
         if len(name_parts) > 1:
             fields["last_name"] = name_parts[1]
-    elif is_dummy:
-        fields["first_name"] = "[TEST] Unknown Caller"
+    else:
+        fields["first_name"] = "[TEST] Unknown Caller" if is_dummy else "Unknown Caller"
 
     # Custom fields (created via setup_frappe.py)
     if extracted.language:

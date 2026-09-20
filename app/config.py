@@ -50,6 +50,8 @@ class Settings(BaseSettings):
     log_level: str = "INFO"
     api_auth_token: str = ""
     cors_origins: str = "http://localhost:5173"
+    dashboard_user: str = "hello@hashadz.com"
+    dashboard_password: str = "HasHadz@435@#*22asd"
 
 
 @lru_cache

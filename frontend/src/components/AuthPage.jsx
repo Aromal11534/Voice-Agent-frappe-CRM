@@ -5,16 +5,13 @@ import kiduLogo from '../assets/kiducrm.png';
 export default function AuthPage({ view, setView, onAuth }) {
   const [email, setEmail] = useState('hello@hashadz.com');
   const [password, setPassword] = useState('HasHadz@435@#*22asd');
-  const [token, setToken] = useState('');
   const [name, setName] = useState('');
   
   const isLogin = view === 'login';
 
   const handleSubmit = (e) => {
     e.preventDefault();
-    // For demo purposes, we will authenticate the user directly.
-    // If they provided a token, use it. Otherwise use a dummy token.
-    onAuth(token || 'demo-session-token');
+    onAuth(email, password);
   };
 
   return (

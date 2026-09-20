@@ -17,6 +17,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from app.config import get_settings
 from app.database import close_db, init_db
 from app.routes import router
+from app.routes_dashboard import auth_router
 from app.routes_dashboard import router as dashboard_router
 
 
@@ -100,3 +101,4 @@ app.add_middleware(
 # Mount all routes
 app.include_router(router)
 app.include_router(dashboard_router)
+app.include_router(auth_router)

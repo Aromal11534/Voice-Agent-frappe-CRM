@@ -107,11 +107,24 @@ function App() {
     }
   };
 
-  const handleAuth = (newToken) => {
-    const clean = (newToken || 'demo-token').trim();
-    sessionStorage.setItem('voiceAgentToken', clean);
-    setToken(clean);
-    setAuthView(null);
+  const handleAuth = async (email, password) => {
+    try {
+      const response = await fetch(`${API_BASE}/api/auth/login`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email, password })
+      });
+      if (!response.ok) {
+        throw new Error('Invalid email or password');
+      }
+      const data = await response.json();
+      const clean = data.token.trim();
+      sessionStorage.setItem('voiceAgentToken', clean);
+      setToken(clean);
+      setAuthView(null);
+    } catch (err) {
+      alert(err.message);
+    }
   };
 
   const clearHistory = async () => {
