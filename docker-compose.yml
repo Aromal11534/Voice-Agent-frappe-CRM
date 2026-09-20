@@ -1,0 +1,224 @@
+
+
+services:
+  # ── Voice Agent Backend Database (PostgreSQL) ────────────
+  postgres:
+    image: postgres:15-alpine
+    container_name: voice_agent_postgres
+    environment:
+      POSTGRES_USER: voiceagent
+      POSTGRES_PASSWORD: secretpassword
+      POSTGRES_DB: voiceagent
+    ports:
+      - "5434:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U voiceagent -d voiceagent"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+    restart: unless-stopped
+
+  # ── Frappe CRM Database (MariaDB) ────────────────────────
+  mariadb:
+    image: mariadb:10.6
+    container_name: frappe_mariadb
+    command:
+      - --character-set-server=utf8mb4
+      - --collation-server=utf8mb4_unicode_ci
+      - --skip-character-set-client-handshake
+      - --skip-innodb-read-only-compressed  # required for mariadb 10.6
+    environment:
+      MYSQL_ROOT_PASSWORD: admin
+    volumes:
+      - mariadb_data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "healthcheck.sh", "--connect", "--innodb_initialized"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+    restart: unless-stopped
+
+  # ── Frappe Redis Services ────────────────────────────────
+  redis-cache:
+    image: redis:6.2-alpine
+    container_name: frappe_redis_cache
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+    volumes:
+      - redis_cache_data:/data
+
+  redis-queue:
+    image: redis:6.2-alpine
+    container_name: frappe_redis_queue
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+    volumes:
+      - redis_queue_data:/data
+
+  # ── Frappe CRM Initialization ────────────────────────────
+  # This one-shot container creates the Frappe site and installs CRM.
+  # It runs once and exits. Other Frappe services wait for this.
+  frappe-init:
+    image: ghcr.io/frappe/crm:latest
+    container_name: frappe_init
+    entrypoint: ["bash", "-c"]
+    command:
+      - |
+        # Wait for MariaDB to be fully ready
+        echo "Waiting for MariaDB..."
+        sleep 10
+
+        # Check if site already exists
+        if [ -f /home/frappe/frappe-bench/sites/frappe-crm.localhost/site_config.json ]; then
+          echo "Site already exists. Skipping initialization."
+          exit 0
+        fi
+
+        echo "=== Creating Frappe site ==="
+        cd /home/frappe/frappe-bench
+
+        # Create the site
+        bench new-site frappe-crm.localhost \
+          --mariadb-root-password admin \
+          --admin-password admin \
+          --no-mariadb-socket \
+          --db-host mariadb
+
+        # Configure Redis globally
+        bench set-config -g redis_cache redis://redis-cache:6379
+        bench set-config -g redis_queue redis://redis-queue:6379
+        bench set-config -g redis_socketio redis://redis-queue:6379
+
+        # Set as default site
+        bench use frappe-crm.localhost
+
+        # Install CRM app
+        bench --site frappe-crm.localhost install-app crm || true
+
+        echo "=== Frappe site created successfully ==="
+        echo "  URL: http://localhost:8080"
+        echo "  User: Administrator"
+        echo "  Password: admin"
+        echo "==========================================="
+    environment:
+      DB_HOST: mariadb
+      DB_PORT: "3306"
+      REDIS_CACHE: redis://redis-cache:6379
+      REDIS_QUEUE: redis://redis-queue:6379
+    depends_on:
+      mariadb:
+        condition: service_healthy
+      redis-cache:
+        condition: service_healthy
+      redis-queue:
+        condition: service_healthy
+    volumes:
+      - frappe_sites:/home/frappe/frappe-bench/sites
+      - frappe_logs:/home/frappe/frappe-bench/logs
+  # ── Frappe Backend / Worker ──────────────────────────────
+  frappe-backend:
+    image: ghcr.io/frappe/crm:latest
+    container_name: frappe_backend
+    environment:
+      DB_HOST: mariadb
+      DB_PORT: "3306"
+      REDIS_CACHE: redis://redis-cache:6379
+      REDIS_QUEUE: redis://redis-queue:6379
+    depends_on:
+      frappe-init:
+        condition: service_completed_successfully
+    volumes:
+      - frappe_sites:/home/frappe/frappe-bench/sites
+      - frappe_logs:/home/frappe/frappe-bench/logs
+    restart: unless-stopped
+
+  # ── Frappe Websocket (Socket.io) ─────────────────────────
+  frappe-websocket:
+    image: ghcr.io/frappe/crm:latest
+    container_name: frappe_websocket
+    command:
+      - node
+      - /home/frappe/frappe-bench/apps/frappe/socketio.js
+    environment:
+      REDIS_QUEUE: redis://redis-queue:6379
+    depends_on:
+      frappe-init:
+        condition: service_completed_successfully
+    volumes:
+      - frappe_sites:/home/frappe/frappe-bench/sites
+      - frappe_logs:/home/frappe/frappe-bench/logs
+    restart: unless-stopped
+
+  # ── Frappe Web (Nginx Frontend Proxy) ────────────────────
+  frappe-frontend:
+    image: ghcr.io/frappe/crm:latest
+    container_name: frappe_frontend
+    command:
+      - nginx-entrypoint.sh
+    environment:
+      BACKEND: frappe-backend:8000
+      FRAPPE_SITE_NAME_HEADER: frappe-crm.localhost
+      SOCKETIO: frappe-websocket:9000
+      UPSTREAM_REAL_IP_ADDRESS: 127.0.0.1
+      UPSTREAM_REAL_IP_HEADER: X-Forwarded-For
+      UPSTREAM_REAL_IP_RECURSIVE: "off"
+    ports:
+      - "8080:8080"
+    depends_on:
+      - frappe-backend
+      - frappe-websocket
+    volumes:
+      - frappe_sites:/home/frappe/frappe-bench/sites
+      - frappe_logs:/home/frappe/frappe-bench/logs
+    restart: unless-stopped
+
+  # ── Voice Agent Backend ──────────────────────────────────
+  voice-agent:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: voice_agent_backend
+    ports:
+      - "8000:8000"
+    env_file:
+      - .env
+    environment:
+      # Override database URL to use Docker network hostname
+      DATABASE_URL: postgresql://voiceagent:secretpassword@postgres:5432/voiceagent
+      # Override Frappe URL to use Docker network hostname
+      FRAPPE_URL: http://frappe-frontend:8080
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: unless-stopped
+
+  dashboard:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: voice_agent_dashboard
+    ports:
+      - "3000:80"
+    depends_on:
+      - voice-agent
+    restart: unless-stopped
+
+volumes:
+  postgres_data:
+  mariadb_data:
+  redis_cache_data:
+  redis_queue_data:
+  frappe_sites:
+  frappe_logs:

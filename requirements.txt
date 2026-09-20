@@ -1,0 +1,23 @@
+# Web framework
+fastapi==0.115.6
+uvicorn[standard]==0.32.1
+websockets==14.1
+
+# Configuration
+pydantic-settings==2.7.1
+python-dotenv==1.0.1
+
+# HTTP client (for Frappe CRM + Exotel APIs)
+httpx==0.28.1
+
+# Sarvam AI (STT + LLM + TTS)
+sarvamai==0.1.1
+
+# Audio processing (deprecated in 3.11, removed in 3.13)
+audioop-lts==0.2.1; python_version >= '3.13'
+
+# Logging
+structlog==24.4.0
+
+# Database (PostgreSQL)
+asyncpg==0.31.0
